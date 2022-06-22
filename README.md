@@ -5,8 +5,10 @@
 ![Event engine screen](img/EventEngine-1.png)
 
 ## Select "OTP using your email" option to login
+![OTP](img/otp_page.png)
 
 ## Click on "Open AWS Console" button in order to login to your AWS Account for this workshop
+![AWS Console](img/console.png)
 
 ## Open "Amazon SageMaker" from AWS Console
 
