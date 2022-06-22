@@ -861,6 +861,8 @@ def parse_args():
         title="model", description="arguments to describe model configuration"
     )
     model_grp.add_argument("--max_context_width", type=int, default=1024)
+    model_grp.add_argument("--use_adamw", type=int, default=0, help="Use adamw optimizer")
+    model_grp.add_argument("--finetune_6b", type=int, default=0, help="Flag to enable finetune 6B GPTJ model")
     model_grp.add_argument("--vocab_size", type=int, default=50400)
     model_grp.add_argument("--hidden_width", type=int, default=768)
     model_grp.add_argument("--num_layers", type=int, default=12)
@@ -869,8 +871,7 @@ def parse_args():
     model_grp.add_argument("--embd_pdrop", type=float, default=0.1)
     model_grp.add_argument("--attn_pdrop", type=float, default=0.1)
     model_grp.add_argument("--summary_first_pdrop", type=float, default=0.1)
-    model_grp.add_argument("--use_adamw", type=int, default=0, help="Use adamw optimizer")
-
+    
     smp_grp = parser.add_argument_group(title="smp", description="smp")
     smp_grp.add_argument("--tensor_parallel_degree", type=int, default=8)
     smp_grp.add_argument("--pipeline_parallel_degree", type=int, default=1)
@@ -1072,32 +1073,7 @@ def main():
         for path in [args.model_dir, args.checkpoint_dir]:
             if not os.path.exists(path):
                 os.makedirs(path, exist_ok=True)
-
-    model_config = GPTJConfig(
-        vocab_size=args.vocab_size,
-        n_positions=args.max_context_width,
-        n_embd=args.hidden_width,
-        n_layer=args.num_layers,
-        n_head=args.num_heads,
-        n_inner=None,
-        activation_function="gelu_new",
-        resid_pdrop=args.resid_pdrop,
-        embd_pdrop=args.embd_pdrop,
-        attn_pdrop=args.attn_pdrop,
-        layer_norm_epsilon=1e-05,
-        initializer_range=0.02,
-        summary_type="cls_index",
-        summary_use_proj=True,
-        summary_activation=None,
-        summary_proj_to_labels=True,
-        summary_first_dropout=args.summary_first_pdrop,
-        use_cache=True,
-        bos_token_id=50256,
-        eos_token_id=50256,
-        return_dict=True,
-        rotary_dim=64,
-    )
-
+    
     # the following improves start-up time by skipping proper initialization
     # of weights in the original model. this is not a problem because DistributedModel
     # will override those weights anyway when tensor_parallel_degree > 1.
@@ -1107,7 +1083,7 @@ def main():
         PreTrainedModel.init_weights = lambda x: None
 
     set_seed(args.seed)
-
+    
     if args.fp16:
         torch.set_default_dtype(torch.float16)
     with smp.tensor_parallelism(
@@ -1120,7 +1096,36 @@ def main():
         with smp.delay_param_initialization(
             enabled=(smp.tp_size() > 1 and args.match_weights < 1 and args.delayed_param > 0)
         ):
-            model = AutoModelForCausalLM.from_config(model_config)
+            if args.finetune_6b:
+                model = AutoModelForCausalLM.from_pretrained("EleutherAI/gpt-j-6B", revision="float16", torch_dtype=torch.float16)
+                model_config = model.config
+                translated_state_dict = translate_hf_gptj_state_dict_to_smdistributed(model.state_dict(), max_seq_len=args.max_context_width)
+            else:
+                model_config = GPTJConfig(
+                    vocab_size=args.vocab_size,
+                    n_positions=args.max_context_width,
+                    n_embd=args.hidden_width,
+                    n_layer=args.num_layers,
+                    n_head=args.num_heads,
+                    n_inner=None,
+                    activation_function="gelu_new",
+                    resid_pdrop=args.resid_pdrop,
+                    embd_pdrop=args.embd_pdrop,
+                    attn_pdrop=args.attn_pdrop,
+                    layer_norm_epsilon=1e-05,
+                    initializer_range=0.02,
+                    summary_type="cls_index",
+                    summary_use_proj=True,
+                    summary_activation=None,
+                    summary_proj_to_labels=True,
+                    summary_first_dropout=args.summary_first_pdrop,
+                    use_cache=True,
+                    bos_token_id=50256,
+                    eos_token_id=50256,
+                    return_dict=True,
+                    rotary_dim=64,
+                )
+                model = AutoModelForCausalLM.from_config(model_config)
             
     torch.set_default_dtype(torch.float32)
 
@@ -1146,8 +1151,12 @@ def main():
     # the model provided for DistributedModel class instantiation.
     if args.fp16:
         torch.set_default_dtype(torch.float16)
+
     model = smp.DistributedModel(model, trace_device="gpu")
 
+    if args.finetune_6b:
+        model.load_state_dict(translated_state_dict)
+    
     if args.fp16:
         m = model.module
     else:
