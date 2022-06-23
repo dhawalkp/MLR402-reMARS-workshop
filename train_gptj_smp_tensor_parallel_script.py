@@ -814,7 +814,7 @@ def parse_args():
     #change to 0 original 1
     io_grp.add_argument("--zipped_data", type=int, default=0, help="input data is zipped files")
     io_grp.add_argument(
-        "--epochs", type=int, default=10, help="times of iterating over the training dataset"
+        "--epochs", type=int, default=1, help="times of iterating over the training dataset"
     )
     io_grp.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     io_grp.add_argument(
