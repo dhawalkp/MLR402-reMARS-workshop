@@ -7,6 +7,8 @@
 # The argument to this script is the image name. This will be used as the image on the local
 # machine and combined with the account and region to form the repository name for ECR.
 image=$1
+local_dir=$2
+new_s3_uri=$3
 
 if [ "$image" == "" ]
 then
@@ -48,3 +50,9 @@ aws ecr get-login-password --region "${region}" | docker login --username AWS --
 docker tag "${image}" "${fullname}"
 
 docker push "${fullname}"
+
+set -ex
+
+cd $local_dir
+tar -cvzf ../model.tar.gz .
+aws s3 cp ../model.tar.gz $new_s3_uri

@@ -62,9 +62,6 @@ class ScoringService(object):
 
             model_path = find_config(root_model_path)
             
-            if os.path.exists(os.path.join(model_path, 'gptj.pt')):
-                os.rename(os.path.join(model_path, 'gptj.pt'), os.path.join(model_path, 'pytorch_model.bin'))
-            
             device = "cuda:0" if torch.cuda.is_available() else "cpu"
             pipe_device = -1 if device == "cpu" else 0
 

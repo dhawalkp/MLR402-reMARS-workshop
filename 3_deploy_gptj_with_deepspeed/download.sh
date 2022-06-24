@@ -15,3 +15,4 @@ cd $DIR
 
 tar -xvf model.tar.gz
 rm model.tar.gz
+mv gptj.pt pytorch_model.bin
